@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<style type="text/css">
+		#switcher {
+			margin-bottom: 20px;
+			font-weight: bold;
+			text-align: center;
+		}
+
+		#switcher button {
+			font-size: 40px;
+		}
+
+		#store-page table tbody tr:hover, 
+		#cart-page table tbody tr:hover {
+			background-color: lightgrey;
+			cursor: pointer;
+		}
+
+		#cart-page {
+			display: none;
+		}
+
+		#delete-btn {
+			background-color: red;
+			color: white;
+			border-radius: 18px;
+		}
+	</style>
+</head>
+<body>
+	<div id="switcher">
+		<button onclick="showCart()">Cart</button>
+		<button onclick="showStore()">Store</button>
+	</div>
+	<div id="cart-page">
+		<table id="cart-table" width="100%">
+			<thead>
+				<tr>
+					<td width="35%">Title</td>
+					<td width="40%">Description</td>
+					<td width="10%">Quantity</td>
+					<td width="10%">Price, $</td>
+					<td width="5%"></td>
+				</tr>
+			</thead>
+			<tbody id="cart-table-body">
+				{{range $index, $value := .UserBasket.Items}}
+				<tr id="product-inbasket-{{.PK}}">
+					<td>{{.Title}}</td>
+					<td>{{.Description}}</td>
+					<td><input type="text" onchange="changeQuantity({{.PK}}, this);" value="{{.Quantity}}"></td>
+					<td>{{.Price}}</td>
+					<td><button id="delete-btn" onclick="deleteFromCart({{.PK}})">Delete</button></td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+		<hr width="10%" align="left">
+		<div>Total: {{.UserBasket.Total}}</div>
+		<button style="background-color: green;  font-weight: bold; font-size: 40px; border-radius: 18px" onclick="checkout();">Buy</button>
+	</div>
+	<div id="store-page">
+		<table id="products-table" width="100%">
+			<thead>
+				<tr>
+					<td width="35%">Title</td>
+					<td width="45%">Description</td>
+					<td width="10%">Quantity</td>
+					<td width="10%">Price, $</td>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Products}}
+				<tr onclick="addToCart({{.PK}})">
+					<td>{{.Title}}</td>
+					<td>{{.Description}}</td>
+					<td>{{.Quantity}}</td>
+					<td>{{.Price}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+
+	<script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+
+	<script type="text/javascript">
+		function showStore() {
+			$("#store-page").show();
+			$("#cart-page").hide();
+		}
+
+		function showCart() {
+			$("#store-page").hide();
+			$("#cart-page").show();
+		}
+
+		function deleteFromCart(id) {
+			$.ajax({
+				url: "basket?id=" + id,
+				method: "DELETE",
+				success: function() {
+					$("#product-inbasket-" + id).remove();
+				}
+			});
+		}
+
+		function addToCart(id) {
+			$.ajax({
+				url: "/basket/" + id,
+				method: "PUT",
+				success: function() {
+					console.log("successfully added")
+				}
+			});
+		}
+
+		function changeQuantity(id, input) {
+			console.log("Id: " + id + ", quantity: " + input.value + " were sent.");
+			$.ajax({
+				url: "basket?id="+id+"&quantity="+input.value,
+				method: "POST",
+			});
+		};
+
+		function checkout() {
+			$.ajax({
+				url: "/basket/checkout",
+				method: "POST",
+				success: function() {
+					alert("Thanks for using our service! Total: ")
+				}
+			});
+		}
+	</script>
+</body>
+</html>

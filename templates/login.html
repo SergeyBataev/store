@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<style type="text/css">
+		
+		#login-form div {
+			text-align: center;
+		}
+
+		#login-form input {
+			margin: .5em 1em;
+		}
+
+		#error {
+			text-align: center;
+			color: red;
+			margin-top: 1em;
+		}
+	</style>
+</head>
+<body>
+	<form id="login-form">
+		<label>Username</label>
+		<input type="email" name="username" placeholder="email">
+		<label>Password</label>
+		<input type="password" name="secret" placeholder="password"><p />
+		<input type="submit" name="login" value="Log in"></button>
+		<input type="submit" name="register" value="Register"></button>
+	</form>
+	<div id="error">{{.Error}}</div>
+
+	<script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+
+	<script type="text/javascript">
+	</script>
+</body>
+</html>
