@@ -151,17 +151,19 @@ func main() {
 				return
 			}
 		} else if r.FormValue("login") != "" {
-			user, err := dbmap.Get(User{}, r.FormValue("username"))
+			username := r.FormValue("username")
+			user, err := dbmap.Get(User{}, username)
 			if err != nil {
 				p.Error = err.Error()
 			} else if user == nil {
-				p.Error = "No such user with Username: " + r.FormValue("username")
+				p.Error = "No such user with Username: " + username
 			} else {
 				u := user.(*User)
 				if err := bcrypt.CompareHashAndPassword(u.Secret, []byte(r.FormValue("secret"))); err != nil {
 					p.Error = err.Error()
 				} else {
-					sessions.GetSession(r).Set("User", r.FormValue("username"))
+					sessions.GetSession(r).Set("User", username)
+					page.User = username
 					http.Redirect(w, r, "/", http.StatusFound)
 					return
 				}
@@ -175,7 +177,7 @@ func main() {
 
 	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		sessions.GetSession(r).Set("User", nil)
-
+		page.User = ""
 		http.Redirect(w, r, "/login", http.StatusOK)
 	})
 
@@ -204,7 +206,6 @@ func main() {
 		}
 
 		page.UserBasket.calcTotal()
-		page.User = GetStringFromSession(r, "User")
 		if err := templates.ExecuteTemplate(w, "index.html", page); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
