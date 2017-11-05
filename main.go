@@ -1,20 +1,23 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/bcrypt"
 	"strconv"
+	"time"
 
-	// "encoding/json"
+	"encoding/json"
+	"github.com/goincremental/negroni-sessions"
+	"github.com/goincremental/negroni-sessions/cookiestore"
+	gmux "github.com/gorilla/mux"
+	"github.com/urfave/negroni"
 	"html/template"
 	"net/http"
 
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"gopkg.in/gorp.v2"
-
-	gmux "github.com/gorilla/mux"
-	"github.com/urfave/negroni"
 )
 
 var dbmap *gorp.DbMap
@@ -22,21 +25,26 @@ var page Page
 var templates = template.Must(template.ParseFiles("templates/index.html", "templates/login.html"))
 
 type Product struct {
-	PK          int64  `db:"pk"`
-	Title       string `db:"title"`
-	Description string `db:"description"`
-	Price       int64  `db:"price"`
-	Quantity    int64  `db:"quantity"`
+	PK          int64  `db:"pk" json:"pk"`
+	Title       string `db:"title" json:"title"`
+	Description string `db:"description" json:"description"`
+	Price       int64  `db:"price" json:"price"`
+	Quantity    int64  `db:"quantity" json:"quantity"`
 }
 
 type Page struct {
 	Products   []Product
 	UserBasket Basket
+	User       string
+}
+
+func newPage() Page {
+	return Page{Products: make([]Product, 0), UserBasket: Basket{Items: make(map[int]*Product)}}
 }
 
 type Basket struct {
-	Items map[int]*Product
-	Total int64
+	Items map[int]*Product `json:"items"`
+	Total int64            `json:"total"`
 }
 
 func (b *Basket) calcTotal() {
@@ -44,6 +52,45 @@ func (b *Basket) calcTotal() {
 	for _, value := range b.Items {
 		b.Total += value.Quantity * value.Price
 	}
+}
+
+func (b *Basket) checkOut(username string) error {
+	productsInStock := make([]*Product, 0)
+	for _, value := range page.UserBasket.Items {
+		prod, err := dbmap.Get(Product{}, value.PK)
+		if err != nil {
+			return err
+		}
+
+		product := prod.(*Product)
+
+		if value.Quantity > product.Quantity {
+			return errors.New("Not enough quantity in stock. In stock: " + string(product.Quantity))
+		}
+		product.Quantity -= value.Quantity
+		productsInStock = append(productsInStock, product)
+	}
+
+	for _, value := range productsInStock {
+		fmt.Printf("%s: %v\n", value.Title, value.Quantity)
+		if _, err := dbmap.Update(value); err != nil {
+			fmt.Println("err")
+			return err
+		}
+	}
+
+	basketjson, err := json.Marshal(b)
+	if err != nil {
+		return err
+	}
+
+	order := Order{ID: -1, User: username, Date: time.Now().Format("2006-01-02"), BasketJSON: basketjson}
+	if err = dbmap.Insert(&order); err != nil {
+		return err
+	}
+
+	b.Items = make(map[int]*Product)
+	return nil
 }
 
 type User struct {
@@ -55,17 +102,32 @@ type LoginPage struct {
 	Error string
 }
 
+type Order struct {
+	ID         int64  `db:"id"`
+	User       string `db:"user"`
+	Date       string `db:"checked"`
+	BasketJSON []byte `db:"basketjson"`
+}
+
 func initDB() {
 	db, _ := sql.Open("mysql", "root:root@tcp(localhost:3306)/shop?charset=utf8")
 	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.MySQLDialect{Engine: "InnoDB", Encoding: "UTF8"}}
 
 	dbmap.AddTableWithName(Product{}, "products").SetKeys(true, "pk")
 	dbmap.AddTableWithName(User{}, "users").SetKeys(false, "username")
+	dbmap.AddTableWithName(Order{}, "orders").SetKeys(true, "id")
 	dbmap.CreateTablesIfNotExists()
 }
 
-func newPage() Page {
-	return Page{Products: make([]Product, 0), UserBasket: Basket{Items: make(map[int]*Product)}}
+func GetProducts(p *[]Product, r *http.Request) (*[]Product, error) {
+	orderBy := " order by "
+	orderBy += (GetStringFromSession(r, "OrderBy"))
+	fmt.Println(orderBy)
+	if _, err := dbmap.Select(p, "select * from products"+orderBy); err != nil {
+		return &[]Product{}, err
+	}
+
+	return p, nil
 }
 
 func main() {
@@ -99,6 +161,7 @@ func main() {
 				if err := bcrypt.CompareHashAndPassword(u.Secret, []byte(r.FormValue("secret"))); err != nil {
 					p.Error = err.Error()
 				} else {
+					sessions.GetSession(r).Set("User", r.FormValue("username"))
 					http.Redirect(w, r, "/", http.StatusFound)
 					return
 				}
@@ -110,14 +173,38 @@ func main() {
 		}
 	})
 
+	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		sessions.GetSession(r).Set("User", nil)
+
+		http.Redirect(w, r, "/login", http.StatusOK)
+	})
+
+	mux.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
+		columnName := r.FormValue("orderBy")
+		if columnName != "title" && columnName != "description" && columnName != "quantity" && columnName != "price" {
+			columnName = "pk"
+		}
+		sessions.GetSession(r).Set("OrderBy", columnName)
+
+		products := make([]Product, 0)
+		if _, err := GetProducts(&products, r); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(&products); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}).Methods("GET").Queries("orderBy", "{orderBy:title|description|quantity|price}")
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		page.Products = make([]Product, 0)
-		if _, err := dbmap.Select(&page.Products, "select * from products"); err != nil {
+		if _, err := GetProducts(&page.Products, r); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		page.UserBasket.calcTotal()
+		page.User = GetStringFromSession(r, "User")
 		if err := templates.ExecuteTemplate(w, "index.html", page); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -125,34 +212,12 @@ func main() {
 	}).Methods("GET")
 
 	mux.HandleFunc("/basket/checkout", func(w http.ResponseWriter, r *http.Request) {
-		productsInStock := make([]Product, 0)
-		for _, value := range page.UserBasket.Items {
-			var p Product
-			err := dbmap.SelectOne(&p, "select * from products where pk=?", value.PK)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			p.Quantity -= value.Quantity
-			if p.Quantity < 0 {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			productsInStock = append(productsInStock, p)
+		if err := page.UserBasket.checkOut(GetStringFromSession(r, "User")); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
-		for _, value := range productsInStock {
-			if _, err := dbmap.Update(&value); err != nil {
-				fmt.Println(err.Error())
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-
-		page.UserBasket.Items = make(map[int]*Product)
-		w.WriteHeader(http.StatusOK)
-
+		http.Redirect(w, r, "/", http.StatusOK)
 	}).Methods("POST")
 
 	mux.HandleFunc("/basket/{pk}", func(w http.ResponseWriter, r *http.Request) {
@@ -207,8 +272,9 @@ func main() {
 	}).Methods("POST")
 
 	n := negroni.Classic()
-	// n.Use(sessions.Sessions("go-for-web-dev", cookiestore.New([]byte("my-secret-123"))))
+	n.Use(sessions.Sessions("go-for-web-dev", cookiestore.New([]byte("my-secret-123"))))
 	n.Use(negroni.HandlerFunc(verifyDatabase))
+	n.Use(negroni.HandlerFunc(verifyUser))
 	n.UseHandler(mux)
 	n.Run(":8080")
 }
@@ -221,4 +287,29 @@ func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 	}
 
 	next(w, r)
+}
+
+func verifyUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if r.URL.Path == "/login" {
+		next(w, r)
+		return
+	}
+
+	if u := GetStringFromSession(r, "User"); u != "" {
+		if _, err := dbmap.Get(User{}, u); err == nil {
+			next(w, r)
+			return
+		}
+	}
+
+	http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+}
+
+func GetStringFromSession(r *http.Request, key string) string {
+	valueString := ""
+	if val := sessions.GetSession(r).Get(key); val != nil {
+		valueString = val.(string)
+	}
+
+	return valueString
 }

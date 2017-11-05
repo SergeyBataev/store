@@ -13,7 +13,7 @@
 			font-size: 40px;
 		}
 
-		#store-page table tbody tr:hover, 
+		#store-page table tr:hover, 
 		#cart-page table tbody tr:hover {
 			background-color: lightgrey;
 			cursor: pointer;
@@ -31,6 +31,7 @@
 	</style>
 </head>
 <body>
+	<div style="text-align: right">You logged as <b>{{.User}}</b> (<a href="/logout">logout</a>)</div>
 	<div id="switcher">
 		<button onclick="showCart()">Cart</button>
 		<button onclick="showStore()">Store</button>
@@ -59,17 +60,17 @@
 			</tbody>
 		</table>
 		<hr width="10%" align="left">
-		<div>Total: {{.UserBasket.Total}}</div>
+		<div>Total: <div id="total">{{.UserBasket.Total}}</div></div>
 		<button style="background-color: green;  font-weight: bold; font-size: 40px; border-radius: 18px" onclick="checkout();">Buy</button>
 	</div>
 	<div id="store-page">
 		<table id="products-table" width="100%">
 			<thead>
 				<tr>
-					<td width="35%">Title</td>
-					<td width="45%">Description</td>
-					<td width="10%">Quantity</td>
-					<td width="10%">Price, $</td>
+					<td width="35%" onclick="orderBy('title')">Title</td>
+					<td width="45%" onclick="orderBy('description')">Description</td>
+					<td width="10%" onclick="orderBy('quantity')">Quantity</td>
+					<td width="10%" onclick="orderBy('price')">Price, $</td>
 				</tr>
 			</thead>
 			<tbody>
@@ -88,6 +89,21 @@
 	<script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
 
 	<script type="text/javascript">
+		function orderBy(columnName) {
+			$.ajax({
+				url: "/products?orderBy=" + columnName,
+				method: "GET",
+				success: function(rawData) {
+					products = JSON.parse(rawData);
+					if (!products) return;
+					$("#store-page tbody").empty();
+					products.forEach(function(product) {
+						$("#store-page tbody").append("<tr onclick='addToCart("+product.pk+")'><td>"+ product.title +"</td><td>"+ product.description +"</td><td>"+ product.quantity +"</td><td>"+ product.price +"</td></tr>")
+					});
+				}
+			});
+		}
+
 		function showStore() {
 			$("#store-page").show();
 			$("#cart-page").hide();
@@ -111,15 +127,11 @@
 		function addToCart(id) {
 			$.ajax({
 				url: "/basket/" + id,
-				method: "PUT",
-				success: function() {
-					console.log("successfully added")
-				}
+				method: "PUT"
 			});
 		}
 
 		function changeQuantity(id, input) {
-			console.log("Id: " + id + ", quantity: " + input.value + " were sent.");
 			$.ajax({
 				url: "basket?id="+id+"&quantity="+input.value,
 				method: "POST",
@@ -131,7 +143,9 @@
 				url: "/basket/checkout",
 				method: "POST",
 				success: function() {
-					alert("Thanks for using our service! Total: ")
+					alert("Thanks for using our service! Total: " + $("#total").html());
+					$("#cart-table-body").empty();
+					$("#total").html("0");
 				}
 			});
 		}
