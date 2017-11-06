@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -18,9 +17,11 @@ import (
 	"models"
 )
 
-var dbmap *gorp.DbMap
-var page models.Page
-var templates = template.Must(template.ParseFiles("templates/index.html", "templates/login.html"))
+var (
+	dbmap     *gorp.DbMap
+	page      models.Page
+	templates = template.Must(template.ParseFiles("templates/index.html", "templates/login.html"))
+)
 
 func initDB() {
 	db, _ := sql.Open("mysql", "root:root@tcp(localhost:3306)/shop?charset=utf8")
@@ -33,13 +34,11 @@ func initDB() {
 }
 
 func main() {
-	fmt.Println("Server is started...")
 	initDB()
-	page = models.NewPage()
 	defer dbmap.Db.Close()
-
 	mux := gmux.NewRouter()
 
+	// manages the main page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		page.Products, err = models.GetProducts(r, dbmap)
@@ -55,6 +54,7 @@ func main() {
 		}
 	}).Methods("GET")
 
+	// handling the user authentication process and provides validation for it
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		var p models.LoginPage
 		if r.FormValue("register") != "" {
@@ -98,6 +98,7 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusFound)
 	})
 
+	// handling the products ordering
 	mux.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
 		columnName := r.FormValue("orderBy")
 		if columnName != "title" && columnName != "type" && columnName != "quantity" && columnName != "price" {
@@ -115,6 +116,7 @@ func main() {
 		}
 	}).Methods("GET").Queries("orderBy", "{orderBy:title|type|quantity|price}")
 
+	// handling the checking out process
 	mux.HandleFunc("/basket/checkout", func(w http.ResponseWriter, r *http.Request) {
 		if err := page.CheckOut(dbmap); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -124,6 +126,7 @@ func main() {
 		http.Redirect(w, r, "/", http.StatusOK)
 	}).Methods("POST")
 
+	// handleing the process of putting product into the basket
 	mux.HandleFunc("/basket/{pk}", func(w http.ResponseWriter, r *http.Request) {
 		pk, err := strconv.Atoi((gmux.Vars(r)["pk"]))
 
@@ -147,6 +150,7 @@ func main() {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}).Methods("PUT")
 
+	// managing removing a product from the basket
 	mux.HandleFunc("/basket", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.FormValue("id"))
 		if err != nil {
@@ -158,6 +162,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("DELETE")
 
+	// method provides changing product quantity in the basket
 	mux.HandleFunc("/basket", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.FormValue("id"))
 		if err != nil {
@@ -183,6 +188,7 @@ func main() {
 	n.Run(":8080")
 }
 
+// function checks if database connection is available
 func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	err := dbmap.Db.Ping()
 	if err != nil {
@@ -193,6 +199,7 @@ func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 	next(w, r)
 }
 
+// function checks if the user is authenticated
 func verifyUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	if r.URL.Path == "/login" {
 		next(w, r)

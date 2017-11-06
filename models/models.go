@@ -10,17 +10,21 @@ import (
 	"time"
 )
 
+// represents all info for web page
 type Page struct {
 	Products   []Product
 	UserBasket Basket
 	User       Userinfo
 }
 
-func NewPage() Page {
-	return Page{UserBasket: Basket{Items: make(map[int]*Product)}}
-}
-
-func (p *Page) CheckOut(username string, dbmap *gorp.DbMap) error {
+/*
+	method provides user's basket and wallet validation,
+	basket emptying in case of positive validation
+	and updating database and returning nil
+	or returning error in case of bad validation or if database updation fails
+*/
+func (p *Page) CheckOut(dbmap *gorp.DbMap) error {
+	username := p.User.Name
 	if p.UserBasket.Total > p.User.Wallet {
 		return errors.New("Not enough money in your wallet!")
 	}
@@ -65,6 +69,7 @@ func (p *Page) CheckOut(username string, dbmap *gorp.DbMap) error {
 	return nil
 }
 
+// struct represents product in stock
 type Product struct {
 	PK       int64  `db:"pk" json:"pk"`
 	Title    string `db:"title" json:"title"`
@@ -73,6 +78,7 @@ type Product struct {
 	Quantity int64  `db:"quantity" json:"quantity"`
 }
 
+// method return pointer to slice which contains all products in stock or error if fetching of products from database failes
 func GetProducts(p *[]Product, r *http.Request, dbmap *gorp.DbMap) (*[]Product, error) {
 	orderBy := " order by "
 	orderBy += (GetStringFromSession(r, "OrderBy"))
@@ -83,6 +89,7 @@ func GetProducts(p *[]Product, r *http.Request, dbmap *gorp.DbMap) (*[]Product, 
 	return p, nil
 }
 
+// represents user's basket
 type Basket struct {
 	Items map[int]*Product `json:"items"`
 	Total int64            `json:"total"`
@@ -106,10 +113,12 @@ type User struct {
 	Wallet   int64  `db:"wallet"`
 }
 
+// this struct is warn user about bad login validation
 type LoginPage struct {
 	Error string
 }
 
+// this struct is used for record orders history into database
 type Order struct {
 	ID         int64  `db:"id"`
 	User       string `db:"user"`
