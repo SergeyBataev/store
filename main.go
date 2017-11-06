@@ -43,8 +43,9 @@ func main() {
 	mux := gmux.NewRouter()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		page.Products = make([]models.Product, 0)
-		if _, err := models.GetProducts(&page.Products, r, dbmap); err != nil {
+		var err error
+		page.Products, err = models.GetProducts(r, dbmap)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -106,8 +107,8 @@ func main() {
 		}
 		sessions.GetSession(r).Set("OrderBy", columnName)
 
-		products := make([]models.Product, 0)
-		if _, err := models.GetProducts(&products, r, dbmap); err != nil {
+		products, err := models.GetProducts(r, dbmap)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -117,7 +118,7 @@ func main() {
 	}).Methods("GET").Queries("orderBy", "{orderBy:title|type|quantity|price}")
 
 	mux.HandleFunc("/basket/checkout", func(w http.ResponseWriter, r *http.Request) {
-		if err := page.CheckOut(models.GetStringFromSession(r, "User"), dbmap); err != nil {
+		if err := page.CheckOut(dbmap); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
