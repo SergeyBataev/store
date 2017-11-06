@@ -31,7 +31,7 @@
 	</style>
 </head>
 <body>
-	<div style="text-align: right">You logged as <b>{{.User}}</b> (<a href="/logout">logout</a>)</div>
+	<div style="text-align: right">You logged as <b>{{.User.Name}} [wallet:{{.User.Wallet}}$]</b> <a href="/logout">logout</a></div>
 	<div id="switcher">
 		<button onclick="showCart()">Cart</button>
 		<button onclick="showStore()">Store</button>
@@ -41,7 +41,7 @@
 			<thead>
 				<tr>
 					<td width="35%">Title</td>
-					<td width="40%">Description</td>
+					<td width="40%">Type</td>
 					<td width="10%">Quantity</td>
 					<td width="10%">Price, $</td>
 					<td width="5%"></td>
@@ -51,7 +51,7 @@
 				{{range $index, $value := .UserBasket.Items}}
 				<tr id="product-inbasket-{{.PK}}">
 					<td>{{.Title}}</td>
-					<td>{{.Description}}</td>
+					<td>{{.Type}}</td>
 					<td><input type="text" onchange="changeQuantity({{.PK}}, this);" value="{{.Quantity}}"></td>
 					<td>{{.Price}}</td>
 					<td><button id="delete-btn" onclick="deleteFromCart({{.PK}})">Delete</button></td>
@@ -68,7 +68,7 @@
 			<thead>
 				<tr>
 					<td width="35%" onclick="orderBy('title')">Title</td>
-					<td width="45%" onclick="orderBy('description')">Description</td>
+					<td width="45%" onclick="orderBy('type')">Type</td>
 					<td width="10%" onclick="orderBy('quantity')">Quantity</td>
 					<td width="10%" onclick="orderBy('price')">Price, $</td>
 				</tr>
@@ -77,7 +77,7 @@
 				{{range .Products}}
 				<tr onclick="addToCart({{.PK}})">
 					<td>{{.Title}}</td>
-					<td>{{.Description}}</td>
+					<td>{{.Type}}</td>
 					<td>{{.Quantity}}</td>
 					<td>{{.Price}}</td>
 				</tr>
@@ -98,7 +98,7 @@
 					if (!products) return;
 					$("#store-page tbody").empty();
 					products.forEach(function(product) {
-						$("#store-page tbody").append("<tr onclick='addToCart("+product.pk+")'><td>"+ product.title +"</td><td>"+ product.description +"</td><td>"+ product.quantity +"</td><td>"+ product.price +"</td></tr>")
+						$("#store-page tbody").append("<tr onclick='addToCart("+product.pk+")'><td>"+ product.title +"</td><td>"+ product.type +"</td><td>"+ product.quantity +"</td><td>"+ product.price +"</td></tr>")
 					});
 				}
 			});

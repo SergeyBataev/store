@@ -25,21 +25,26 @@ var page Page
 var templates = template.Must(template.ParseFiles("templates/index.html", "templates/login.html"))
 
 type Product struct {
-	PK          int64  `db:"pk" json:"pk"`
-	Title       string `db:"title" json:"title"`
-	Description string `db:"description" json:"description"`
-	Price       int64  `db:"price" json:"price"`
-	Quantity    int64  `db:"quantity" json:"quantity"`
+	PK       int64  `db:"pk" json:"pk"`
+	Title    string `db:"title" json:"title"`
+	Type     string `db:"type" json:"type"`
+	Price    int64  `db:"price" json:"price"`
+	Quantity int64  `db:"quantity" json:"quantity"`
 }
 
 type Page struct {
 	Products   []Product
 	UserBasket Basket
-	User       string
+	User       Userinfo
 }
 
 func newPage() Page {
-	return Page{Products: make([]Product, 0), UserBasket: Basket{Items: make(map[int]*Product)}}
+	return Page{UserBasket: Basket{Items: make(map[int]*Product)}}
+}
+
+type Userinfo struct {
+	Name   string
+	Wallet int64
 }
 
 type Basket struct {
@@ -55,8 +60,12 @@ func (b *Basket) calcTotal() {
 }
 
 func (b *Basket) checkOut(username string) error {
+	if b.Total > page.User.Wallet {
+		return errors.New("Not enough money in your wallet!")
+	}
+
 	productsInStock := make([]*Product, 0)
-	for _, value := range page.UserBasket.Items {
+	for _, value := range b.Items {
 		prod, err := dbmap.Get(Product{}, value.PK)
 		if err != nil {
 			return err
@@ -71,8 +80,12 @@ func (b *Basket) checkOut(username string) error {
 		productsInStock = append(productsInStock, product)
 	}
 
+	page.User.Wallet -= b.Total
+	if _, err := dbmap.Db.Exec("update users set wallet=? where username=?", page.User.Wallet, page.User.Name); err != nil {
+		return err
+	}
+
 	for _, value := range productsInStock {
-		fmt.Printf("%s: %v\n", value.Title, value.Quantity)
 		if _, err := dbmap.Update(value); err != nil {
 			fmt.Println("err")
 			return err
@@ -88,7 +101,6 @@ func (b *Basket) checkOut(username string) error {
 	if err = dbmap.Insert(&order); err != nil {
 		return err
 	}
-
 	b.Items = make(map[int]*Product)
 	return nil
 }
@@ -96,6 +108,7 @@ func (b *Basket) checkOut(username string) error {
 type User struct {
 	Username string `db:"username"`
 	Secret   []byte `db:"secret"`
+	Wallet   int64  `db:"wallet"`
 }
 
 type LoginPage struct {
@@ -138,11 +151,25 @@ func main() {
 
 	mux := gmux.NewRouter()
 
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		page.Products = make([]Product, 0)
+		if _, err := GetProducts(&page.Products, r); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		page.UserBasket.calcTotal()
+		if err := templates.ExecuteTemplate(w, "index.html", page); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("GET")
+
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		var p LoginPage
 		if r.FormValue("register") != "" {
 			secret, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("secret")), bcrypt.DefaultCost)
-			user := User{Username: r.FormValue("username"), Secret: secret}
+			user := User{Username: r.FormValue("username"), Secret: secret, Wallet: 100}
 
 			if err := dbmap.Insert(&user); err != nil {
 				p.Error = err.Error()
@@ -163,7 +190,7 @@ func main() {
 					p.Error = err.Error()
 				} else {
 					sessions.GetSession(r).Set("User", username)
-					page.User = username
+					page.User = Userinfo{Name: username, Wallet: u.Wallet}
 					http.Redirect(w, r, "/", http.StatusFound)
 					return
 				}
@@ -177,13 +204,13 @@ func main() {
 
 	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		sessions.GetSession(r).Set("User", nil)
-		page.User = ""
-		http.Redirect(w, r, "/login", http.StatusOK)
+		page.User = Userinfo{}
+		http.Redirect(w, r, "/login", http.StatusFound)
 	})
 
 	mux.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
 		columnName := r.FormValue("orderBy")
-		if columnName != "title" && columnName != "description" && columnName != "quantity" && columnName != "price" {
+		if columnName != "title" && columnName != "type" && columnName != "quantity" && columnName != "price" {
 			columnName = "pk"
 		}
 		sessions.GetSession(r).Set("OrderBy", columnName)
@@ -196,21 +223,7 @@ func main() {
 		if err := json.NewEncoder(w).Encode(&products); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-	}).Methods("GET").Queries("orderBy", "{orderBy:title|description|quantity|price}")
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		page.Products = make([]Product, 0)
-		if _, err := GetProducts(&page.Products, r); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		page.UserBasket.calcTotal()
-		if err := templates.ExecuteTemplate(w, "index.html", page); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("GET")
+	}).Methods("GET").Queries("orderBy", "{orderBy:title|type|quantity|price}")
 
 	mux.HandleFunc("/basket/checkout", func(w http.ResponseWriter, r *http.Request) {
 		if err := page.UserBasket.checkOut(GetStringFromSession(r, "User")); err != nil {
@@ -297,9 +310,11 @@ func verifyUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	}
 
 	if u := GetStringFromSession(r, "User"); u != "" {
-		if _, err := dbmap.Get(User{}, u); err == nil {
-			next(w, r)
-			return
+		if u == page.User.Name {
+			if _, err := dbmap.Get(User{}, u); err == nil {
+				next(w, r)
+				return
+			}
 		}
 	}
 
