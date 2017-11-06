@@ -1,22 +1,20 @@
 package main
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
+	"html/template"
+	"net/http"
 	"strconv"
 
-	"encoding/json"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/goincremental/negroni-sessions"
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	gmux "github.com/gorilla/mux"
 	"github.com/urfave/negroni"
-	"html/template"
-	"net/http"
-
-	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/gorp.v2"
-
 	"models"
 )
 

@@ -1,3 +1,4 @@
+// package contains shop models structs and their management functions
 package models
 
 import (
@@ -9,14 +10,6 @@ import (
 	"time"
 )
 
-type Product struct {
-	PK       int64  `db:"pk" json:"pk"`
-	Title    string `db:"title" json:"title"`
-	Type     string `db:"type" json:"type"`
-	Price    int64  `db:"price" json:"price"`
-	Quantity int64  `db:"quantity" json:"quantity"`
-}
-
 type Page struct {
 	Products   []Product
 	UserBasket Basket
@@ -25,23 +18,6 @@ type Page struct {
 
 func NewPage() Page {
 	return Page{UserBasket: Basket{Items: make(map[int]*Product)}}
-}
-
-type Userinfo struct {
-	Name   string
-	Wallet int64
-}
-
-type Basket struct {
-	Items map[int]*Product `json:"items"`
-	Total int64            `json:"total"`
-}
-
-func (b *Basket) CalcTotal() {
-	b.Total = 0
-	for _, value := range b.Items {
-		b.Total += value.Quantity * value.Price
-	}
 }
 
 func (p *Page) CheckOut(username string, dbmap *gorp.DbMap) error {
@@ -89,6 +65,41 @@ func (p *Page) CheckOut(username string, dbmap *gorp.DbMap) error {
 	return nil
 }
 
+type Product struct {
+	PK       int64  `db:"pk" json:"pk"`
+	Title    string `db:"title" json:"title"`
+	Type     string `db:"type" json:"type"`
+	Price    int64  `db:"price" json:"price"`
+	Quantity int64  `db:"quantity" json:"quantity"`
+}
+
+func GetProducts(p *[]Product, r *http.Request, dbmap *gorp.DbMap) (*[]Product, error) {
+	orderBy := " order by "
+	orderBy += (GetStringFromSession(r, "OrderBy"))
+	if _, err := dbmap.Select(p, "select * from products"+orderBy); err != nil {
+		return &[]Product{}, err
+	}
+
+	return p, nil
+}
+
+type Basket struct {
+	Items map[int]*Product `json:"items"`
+	Total int64            `json:"total"`
+}
+
+func (b *Basket) CalcTotal() {
+	b.Total = 0
+	for _, value := range b.Items {
+		b.Total += value.Quantity * value.Price
+	}
+}
+
+type Userinfo struct {
+	Name   string
+	Wallet int64
+}
+
 type User struct {
 	Username string `db:"username"`
 	Secret   []byte `db:"secret"`
@@ -104,16 +115,6 @@ type Order struct {
 	User       string `db:"user"`
 	Date       string `db:"checked"`
 	BasketJSON []byte `db:"basketjson"`
-}
-
-func GetProducts(p *[]Product, r *http.Request, dbmap *gorp.DbMap) (*[]Product, error) {
-	orderBy := " order by "
-	orderBy += (GetStringFromSession(r, "OrderBy"))
-	if _, err := dbmap.Select(p, "select * from products"+orderBy); err != nil {
-		return &[]Product{}, err
-	}
-
-	return p, nil
 }
 
 func GetStringFromSession(r *http.Request, key string) string {
